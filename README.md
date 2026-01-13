@@ -7,7 +7,7 @@ Wyoming server for Supertonic TTS (V2).
 Clone the repository and set up a virtual environment:
 
 ```bash
-git clone https://github.com/your-username/wyoming_supertonic.git
+git clone https://github.com/mitrokun/wyoming_supertonic.git
 cd wyoming_supertonic
 
 python3 -m venv venv
