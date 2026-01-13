@@ -1,4 +1,4 @@
-# Wyoming Supertonic
+# Wyoming [Supertonic](https://github.com/supertone-inc/supertonic)
 
 Wyoming server for Supertonic TTS (V2).
 
