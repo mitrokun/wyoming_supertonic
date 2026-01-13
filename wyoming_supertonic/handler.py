@@ -1,6 +1,7 @@
 import argparse
 import asyncio
 import logging
+import json
 
 from sentence_stream import SentenceBoundaryDetector
 from wyoming.audio import AudioChunk, AudioStart, AudioStop
@@ -26,10 +27,13 @@ class SupertonicEventHandler(AsyncEventHandler):
         wyoming_info: Info,
         cli_args: argparse.Namespace,
         engine: SupertonicEngine,
+        reader: asyncio.StreamReader,
+        writer: asyncio.StreamWriter,
         *args,
         **kwargs,
     ) -> None:
-        super().__init__(*args, **kwargs)
+        super().__init__(reader=reader, writer=writer, *args, **kwargs)
+        
         self.cli_args = cli_args
         self.wyoming_info_event = wyoming_info.event()
         self.engine = engine
@@ -39,7 +43,51 @@ class SupertonicEventHandler(AsyncEventHandler):
         self._audio_started = False
         self._sentence_buffer = ""
         self._current_voice = None 
-        self._current_language = "en-US" # Default language
+        self._current_language = self.cli_args.language
+
+
+    async def run_raw(self) -> None:
+        """Reads raw data from the socket and logs it before processing."""
+        try:
+            while True:
+                header_line = await self.reader.readline()
+                if not header_line:
+                    _LOGGER.debug("Client disconnected")
+                    break
+                
+                header_line_str = header_line.decode().strip()
+                _LOGGER.debug("Raw header received: %s", header_line_str)
+
+                if not header_line_str:
+                    continue
+
+                header_dict = json.loads(header_line_str)
+                data_length = header_dict.get("data_length")
+                
+                data_dict = header_dict.get("data", {})
+
+                if data_length and data_length > 0:
+                    data_bytes = await self.reader.readexactly(data_length)
+                    data_bytes_str = data_bytes.decode().strip()
+                    _LOGGER.debug("Raw data payload received: %s", data_bytes_str)
+                    data_dict.update(json.loads(data_bytes_str))
+                
+                event_type = header_dict["type"]
+                event = Event(type=event_type, data=data_dict)
+                
+                if not (await self.handle_event(event)):
+                    break
+
+        except (ConnectionResetError, asyncio.IncompleteReadError) as e:
+            _LOGGER.debug(f"Connection closed: {e}")
+        except Exception:
+            _LOGGER.exception("Unexpected error in raw handler loop")
+        finally:
+            self.writer.close()
+            try:
+                await self.writer.wait_closed()
+            except Exception:
+                pass
 
     async def handle_event(self, event: Event) -> bool:
         if Describe.is_type(event.type):
@@ -52,13 +100,12 @@ class SupertonicEventHandler(AsyncEventHandler):
                 if self._is_streaming: return True
                 
                 syn = Synthesize.from_event(event)
-                _LOGGER.debug(f"Request: '{syn.text[:20]}...'")
+                voice_data = event.data.get("voice", {})
+                lang = voice_data.get("language")
+
+                if syn.voice and syn.voice.name: self._current_voice = syn.voice.name
                 
-                # Store parameters
-                if syn.voice and syn.voice.name:
-                    self._current_voice = syn.voice.name
-                if syn.voice and syn.voice.language:
-                    self._current_language = syn.voice.language
+                if lang: self._current_language = lang
                 
                 return await self._handle_synthesize_full(syn.text)
 
@@ -67,18 +114,21 @@ class SupertonicEventHandler(AsyncEventHandler):
                 if self.cli_args.no_streaming: return True
 
                 start = SynthesizeStart.from_event(event)
+                voice_data = event.data.get("voice", {})
+                lang = voice_data.get("language")
+                
                 self._is_streaming = True
                 self._audio_started = False
                 self.sbd = SentenceBoundaryDetector()
                 self._sentence_buffer = ""
                 
-                # Store voice and language
                 if start.voice and start.voice.name:
                     self._current_voice = start.voice.name
-                if start.voice and start.voice.language:
-                    self._current_language = start.voice.language
+
+                if lang:
+                    self._current_language = lang
                 
-                _LOGGER.debug(f"Stream start. Voice: {self._current_voice}, Language: {self._current_language}")
+                _LOGGER.debug(f"Stream started. Voice: {self._current_voice}, Language: {self._current_language}")
                 return True
 
             # --- 3. Chunk ---
@@ -144,14 +194,13 @@ class SupertonicEventHandler(AsyncEventHandler):
         self._sentence_buffer = ""
         if not text: return
 
-        # Determine voice
         voice_name = "M1"
         if self._current_voice and self._current_voice in self.engine.available_voices:
              voice_name = self._current_voice
         elif self.engine.available_voices:
              voice_name = self.engine.available_voices[0]
 
-        _LOGGER.debug(f"Synthesizing: '{text}' (V:{voice_name}, L:{self._current_language})")
+        _LOGGER.debug(f"Requesting synthesis for: '{text[:40]}...'")
 
         loop = asyncio.get_running_loop()
         try:

@@ -81,6 +81,8 @@ class SupertonicEngine:
 
         # 3. Synthesize via helper
         try:
+            _LOGGER.debug(f"Synthesizing: (Voice: {voice_name}, Lang: {short_lang}, Speed: {self.speed}, Steps: {self.steps})")
+            
             wav, duration = self.tts(
                 text,       
                 short_lang, 

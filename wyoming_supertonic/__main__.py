@@ -3,9 +3,9 @@ import asyncio
 import logging
 from functools import partial
 import os
+from urllib.parse import urlparse
 
 from wyoming.info import Attribution, Info, TtsProgram, TtsVoice
-from wyoming.server import AsyncServer
 
 from . import __version__
 from .supertonic_engine import SupertonicEngine
@@ -13,10 +13,23 @@ from .handler import SupertonicEventHandler
 
 _LOGGER = logging.getLogger(__name__)
 
+async def client_connected_cb(
+    handler_factory: partial,
+    reader: asyncio.StreamReader,
+    writer: asyncio.StreamWriter,
+) -> None:
+    """Creates a handler and calls its custom run_raw method for each client."""
+    host, port, *_ = writer.get_extra_info("peername")
+    _LOGGER.debug(f"Client connected: {host}:{port}")
+    handler = handler_factory(reader=reader, writer=writer)
+    await handler.run_raw()
+
+
 async def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--uri", default="tcp://0.0.0.0:10209", help="Server URI")
     parser.add_argument("--data-dir", required=True, help="Path to folder containing 'onnx' and 'voice_styles'")
+    parser.add_argument("--language", default="en", help="Default voice language")
     parser.add_argument("--steps", type=int, default=5, help="Denoising steps")
     parser.add_argument("--speed", type=float, default=1.0, help="Speech speed")
     parser.add_argument("--threads", type=int, default=4, help="CPU threads")
@@ -29,7 +42,6 @@ async def main() -> None:
 
     logging.basicConfig(level=logging.DEBUG if args.debug else logging.INFO, format=args.log_format)
     
-    # ONNX Runtime settings (via env vars, as ort is initialized inside helper)
     os.environ["SUPERTONIC_INTRA_OP_THREADS"] = str(args.threads)
     os.environ["SUPERTONIC_INTER_OP_THREADS"] = str(max(1, args.threads // 2))
 
@@ -77,18 +89,31 @@ async def main() -> None:
             )
         ],
     )
+    
+    uri = urlparse(args.uri)
+    if uri.scheme != "tcp" or not uri.hostname or not uri.port:
+        _LOGGER.fatal("Only tcp://HOST:PORT URI is supported for this debug mode")
+        return
 
-    server = AsyncServer.from_uri(args.uri)
-    _LOGGER.info(f"Server started: {args.uri}")
+    _LOGGER.info(f"Starting raw server on {uri.hostname}:{uri.port}")
 
-    await server.run(
-        partial(
-            SupertonicEventHandler,
-            wyoming_info,
-            args,
-            engine,
-        )
+    # Аргументы (args) уже передаются в handler_factory, так что здесь больше ничего менять не нужно
+    handler_factory = partial(
+        SupertonicEventHandler,
+        wyoming_info,
+        args,
+        engine,
     )
+
+    server = await asyncio.start_server(
+        partial(client_connected_cb, handler_factory),
+        uri.hostname,
+        uri.port
+    )
+    
+    async with server:
+        await server.serve_forever()
+
 
 def run():
     try:
