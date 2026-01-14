@@ -1,29 +1,19 @@
 import argparse
 import asyncio
 import logging
-from functools import partial
 import os
+import sys
+from functools import partial
 from urllib.parse import urlparse
 
 from wyoming.info import Attribution, Info, TtsProgram, TtsVoice
+from wyoming.server import AsyncTcpServer
 
 from . import __version__
 from .supertonic_engine import SupertonicEngine
 from .handler import SupertonicEventHandler
 
 _LOGGER = logging.getLogger(__name__)
-
-async def client_connected_cb(
-    handler_factory: partial,
-    reader: asyncio.StreamReader,
-    writer: asyncio.StreamWriter,
-) -> None:
-    """Creates a handler and calls its custom run_raw method for each client."""
-    host, port, *_ = writer.get_extra_info("peername")
-    _LOGGER.debug(f"Client connected: {host}:{port}")
-    handler = handler_factory(reader=reader, writer=writer)
-    await handler.run_raw()
-
 
 async def main() -> None:
     parser = argparse.ArgumentParser()
@@ -92,12 +82,13 @@ async def main() -> None:
     
     uri = urlparse(args.uri)
     if uri.scheme != "tcp" or not uri.hostname or not uri.port:
-        _LOGGER.fatal("Only tcp://HOST:PORT URI is supported for this debug mode")
+        _LOGGER.fatal("Only tcp://HOST:PORT URI is supported")
         return
 
-    _LOGGER.info(f"Starting raw server on {uri.hostname}:{uri.port}")
+    _LOGGER.info(f"Starting Wyoming server on {uri.hostname}:{uri.port}")
 
-    # Аргументы (args) уже передаются в handler_factory, так что здесь больше ничего менять не нужно
+    server = AsyncTcpServer(host=uri.hostname, port=uri.port)
+
     handler_factory = partial(
         SupertonicEventHandler,
         wyoming_info,
@@ -105,14 +96,10 @@ async def main() -> None:
         engine,
     )
 
-    server = await asyncio.start_server(
-        partial(client_connected_cb, handler_factory),
-        uri.hostname,
-        uri.port
-    )
-    
-    async with server:
-        await server.serve_forever()
+    try:
+        await server.run(handler_factory)
+    except KeyboardInterrupt:
+        pass
 
 
 def run():

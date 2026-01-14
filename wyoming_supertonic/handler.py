@@ -1,7 +1,6 @@
 import argparse
 import asyncio
 import logging
-import json
 
 from sentence_stream import SentenceBoundaryDetector
 from wyoming.audio import AudioChunk, AudioStart, AudioStop
@@ -45,50 +44,6 @@ class SupertonicEventHandler(AsyncEventHandler):
         self._current_voice = None 
         self._current_language = self.cli_args.language
 
-
-    async def run_raw(self) -> None:
-        """Reads raw data from the socket and logs it before processing."""
-        try:
-            while True:
-                header_line = await self.reader.readline()
-                if not header_line:
-                    _LOGGER.debug("Client disconnected")
-                    break
-                
-                header_line_str = header_line.decode().strip()
-                _LOGGER.debug("Raw header received: %s", header_line_str)
-
-                if not header_line_str:
-                    continue
-
-                header_dict = json.loads(header_line_str)
-                data_length = header_dict.get("data_length")
-                
-                data_dict = header_dict.get("data", {})
-
-                if data_length and data_length > 0:
-                    data_bytes = await self.reader.readexactly(data_length)
-                    data_bytes_str = data_bytes.decode().strip()
-                    _LOGGER.debug("Raw data payload received: %s", data_bytes_str)
-                    data_dict.update(json.loads(data_bytes_str))
-                
-                event_type = header_dict["type"]
-                event = Event(type=event_type, data=data_dict)
-                
-                if not (await self.handle_event(event)):
-                    break
-
-        except (ConnectionResetError, asyncio.IncompleteReadError) as e:
-            _LOGGER.debug(f"Connection closed: {e}")
-        except Exception:
-            _LOGGER.exception("Unexpected error in raw handler loop")
-        finally:
-            self.writer.close()
-            try:
-                await self.writer.wait_closed()
-            except Exception:
-                pass
-
     async def handle_event(self, event: Event) -> bool:
         if Describe.is_type(event.type):
             await self.write_event(self.wyoming_info_event)
@@ -100,13 +55,17 @@ class SupertonicEventHandler(AsyncEventHandler):
                 if self._is_streaming: return True
                 
                 syn = Synthesize.from_event(event)
+                # Надеемся, что библиотека сама смержила данные
                 voice_data = event.data.get("voice", {})
                 lang = voice_data.get("language")
 
-                if syn.voice and syn.voice.name: self._current_voice = syn.voice.name
+                if syn.voice and syn.voice.name: 
+                    self._current_voice = syn.voice.name
                 
-                if lang: self._current_language = lang
+                if lang: 
+                    self._current_language = lang
                 
+                _LOGGER.debug(f"Synthesize request. Voice: {self._current_voice}, Lang: {self._current_language}")
                 return await self._handle_synthesize_full(syn.text)
 
             # --- 2. Start Streaming ---
@@ -114,6 +73,7 @@ class SupertonicEventHandler(AsyncEventHandler):
                 if self.cli_args.no_streaming: return True
 
                 start = SynthesizeStart.from_event(event)
+                
                 voice_data = event.data.get("voice", {})
                 lang = voice_data.get("language")
                 
@@ -200,7 +160,7 @@ class SupertonicEventHandler(AsyncEventHandler):
         elif self.engine.available_voices:
              voice_name = self.engine.available_voices[0]
 
-        _LOGGER.debug(f"Requesting synthesis for: '{text[:40]}...'")
+        _LOGGER.debug(f"Requesting synthesis for: '{text[:40]}...' [Lang: {self._current_language}]")
 
         loop = asyncio.get_running_loop()
         try:
