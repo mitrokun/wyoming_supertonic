@@ -19,7 +19,7 @@ pip install wyoming sentence-stream numpy onnxruntime
 
 You must download the model files manually.
 
-1. Download the contents of the `assets` folder from the [Supertonic HuggingFace repository](https://huggingface.co/Supertone/supertonic-2/supertonic/main).
+1. Download the contents of the `assets` folder from the [Supertonic HuggingFace repository](https://huggingface.co/Supertone/supertonic-2/tree/main).
 2. Organize them in a directory (e.g., `/home/username/supertonic-data`) exactly as shown below:
 
 ```text
