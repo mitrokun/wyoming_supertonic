@@ -1,0 +1,15 @@
+[project]
+name = "wyoming-supertonic"
+version = "1.0.0"
+description = "Wyoming Server for Supertonic Engine"
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = [
+    "wyoming",
+    "sentence-stream",
+    "numpy",
+    "onnxruntime",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["wyoming_supertonic"]
