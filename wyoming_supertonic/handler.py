@@ -21,6 +21,8 @@ from .supertonic_engine import SupertonicEngine
 _LOGGER = logging.getLogger(__name__)
 
 class SupertonicEventHandler(AsyncEventHandler):
+    """Event handler for Supertonic TTS."""
+
     def __init__(
         self,
         wyoming_info: Info,
@@ -40,17 +42,17 @@ class SupertonicEventHandler(AsyncEventHandler):
         self.sbd = SentenceBoundaryDetector()
         self._is_streaming = False
         self._audio_started = False
-        self._sentence_buffer = ""
         self._current_voice = None 
         self._current_language = self.cli_args.language
 
     async def handle_event(self, event: Event) -> bool:
+        """Handle incoming Wyoming event."""
         if Describe.is_type(event.type):
             await self.write_event(self.wyoming_info_event)
             return True
 
         try:
-            # --- 1. Synthesize (Single) ---
+            # --- 1. Synthesize (Single request) ---
             if Synthesize.is_type(event.type):
                 if self._is_streaming: return True
                 
@@ -72,14 +74,12 @@ class SupertonicEventHandler(AsyncEventHandler):
                 if self.cli_args.no_streaming: return True
 
                 start = SynthesizeStart.from_event(event)
-                
                 voice_data = event.data.get("voice", {})
                 lang = voice_data.get("language")
                 
                 self._is_streaming = True
                 self._audio_started = False
                 self.sbd = SentenceBoundaryDetector()
-                self._sentence_buffer = ""
                 
                 if start.voice and start.voice.name:
                     self._current_voice = start.voice.name
@@ -101,13 +101,14 @@ class SupertonicEventHandler(AsyncEventHandler):
             # --- 4. Stop ---
             if SynthesizeStop.is_type(event.type):
                 if not self._is_streaming: return True
+                
                 remaining = self.sbd.finish()
                 if remaining:
                     await self._process_sentence(remaining)
-                await self._flush_buffer()
                 
                 if self._audio_started:
                     await self.write_event(AudioStop().event())
+                
                 await self.write_event(SynthesizeStopped().event())
                 self._is_streaming = False
                 return True
@@ -120,8 +121,8 @@ class SupertonicEventHandler(AsyncEventHandler):
         return True
 
     async def _handle_synthesize_full(self, text: str) -> bool:
+        """Process a complete text synthesis request."""
         self._audio_started = False
-        self._sentence_buffer = ""
         self.sbd = SentenceBoundaryDetector()
         
         sentences = list(self.sbd.add_chunk(text))
@@ -130,36 +131,27 @@ class SupertonicEventHandler(AsyncEventHandler):
         
         for s in sentences:
             await self._process_sentence(s)
-        await self._flush_buffer()
         
         if self._audio_started:
             await self.write_event(AudioStop().event())
         return True
 
     async def _process_sentence(self, sentence: str):
+        """Process a single sentence detected by the boundary detector."""
         s = sentence.strip()
         if not s: return
         
-        if self._sentence_buffer:
-            self._sentence_buffer += " " + s
-        else:
-            self._sentence_buffer = s
+        await self._synthesize_text(s)
 
-        if len(self._sentence_buffer) >= 20:
-            await self._flush_buffer()
-
-    async def _flush_buffer(self):
-        text = self._sentence_buffer.strip()
-        self._sentence_buffer = ""
-        if not text: return
-
+    async def _synthesize_text(self, text: str):
+        """Synthesize text to audio and stream chunks."""
         voice_name = "M1"
         if self._current_voice and self._current_voice in self.engine.available_voices:
              voice_name = self._current_voice
         elif self.engine.available_voices:
              voice_name = self.engine.available_voices[0]
 
-        _LOGGER.debug(f"Requesting synthesis for: '{text[:40]}...'")
+        _LOGGER.debug(f"Requesting synthesis for: '{text[:40]}...' [Lang: {self._current_language}]")
 
         loop = asyncio.get_running_loop()
         try:
