@@ -2,20 +2,7 @@
 
 Wyoming server for Supertonic TTS (V2).
 
-## Installation
-
-Clone the repository and set up a virtual environment:
-
-```bash
-git clone https://github.com/mitrokun/wyoming_supertonic.git
-cd wyoming_supertonic
-
-python3 -m venv venv
-source venv/bin/activate
-pip install wyoming sentence-stream numpy onnxruntime
-```
-
-## Model Setup
+### Model Setup
 
 You must download the model files manually.
 
@@ -37,6 +24,19 @@ supertonic-data/
     └── ...
 ```
 
+## Installation
+
+Clone the repository and set up a virtual environment:
+
+```bash
+git clone https://github.com/mitrokun/wyoming_supertonic.git
+cd wyoming_supertonic
+
+python3 -m venv venv
+source venv/bin/activate
+pip install wyoming sentence-stream numpy onnxruntime
+```
+
 ## Usage
 
 Run the server pointing to your model directory:
@@ -45,7 +45,7 @@ Run the server pointing to your model directory:
 python3 -m wyoming_supertonic --data-dir ~/supertonic-data --uri 'tcp://0.0.0.0:10209'
 ```
 
-## Arguments
+### Arguments
 
 *   `--data-dir`: **Required**. Path to the folder containing `onnx` and `voice_styles` directories.
 *   `--uri`: Server URI (default: `tcp://0.0.0.0:10209`).
@@ -54,3 +54,11 @@ python3 -m wyoming_supertonic --data-dir ~/supertonic-data --uri 'tcp://0.0.0.0:
 *   `--threads`: Number of CPU threads to use (default: `4`).
 *   `--no-streaming`: Disable sentence-by-sentence streaming.
 *   `--debug`: Enable debug logging.
+
+## Quick start with uv
+
+```
+git clone https://github.com/mitrokun/wyoming_supertonic.git
+cd wyoming_supertonic
+UV_CACHE_DIR=.uv_cache uv run -m wyoming_supertonic --data-dir ~/supertonic-data --uri 'tcp://0.0.0.0:10209'
+```
