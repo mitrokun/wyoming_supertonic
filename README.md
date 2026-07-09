@@ -63,7 +63,7 @@ for auto-stress for the Russian language, add the extra parameter `--extra ru` (
 
 ### Tip: Multi-Language Setup
 
-Due to a [limitation](https://github.com/OHF-Voice/wyoming/blob/main/wyoming/tts.py#L31) of the Wyoming standard library, passing the `voice` parameter disables the `language` parameter.
+Due to a [limitation](https://github.com/OHF-Voice/wyoming/blob/main/wyoming/tts.py#L39) of the Wyoming standard library, passing the `voice` parameter disables the `language` parameter.
 
 If you are setting up a multi-language assistant with different voice pipelines and need dynamic language switching, it is recommended to use this alternative client: **[Streaming tts proxy](https://github.com/mitrokun/streaming_tts_proxy)**
 
