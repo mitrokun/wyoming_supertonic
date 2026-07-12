@@ -1,0 +1,24 @@
+services:
+  wyoming-supertonic:
+    build:
+      context: .
+      args:
+        SUPERTONIC_REF: main
+        WITH_RU: "false"   # set to "true" to enable Russian auto-stress
+    image: wyoming-supertonic:latest
+    container_name: wyoming-supertonic
+    restart: unless-stopped
+    ports:
+      - "10209:10209"
+    volumes:
+      # Persists the auto-downloaded model (~ a few hundred MB) so it
+      # survives container rebuilds/restarts.
+      - ./data:/data
+    # Anything here is forwarded by docker_run.sh to `python -m wyoming_supertonic`
+    command:
+      - --language=en
+      - --speed=1.0
+      - --steps=5
+      - --threads=4
+      - --debug
+
