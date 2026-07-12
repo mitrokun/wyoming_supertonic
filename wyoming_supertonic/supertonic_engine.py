@@ -95,7 +95,7 @@ class SupertonicEngine:
         try:
             from supertonic import TTS
             # The library handles HF model caching automatically
-            self.tts = TTS(auto_download=True)
+            self.tts = TTS(model_dir=self.model_path, auto_download=True)
             _LOGGER.info(
                 "Engine loaded. Sample Rate: %dHz. Lazy caching enabled.",
                 self.sample_rate
