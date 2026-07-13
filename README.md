@@ -59,6 +59,17 @@ uv --cache-dir .uv_cache run -m wyoming_supertonic --uri 'tcp://0.0.0.0:10209'
 ```
 for auto-stress for the Russian language, add the extra parameter `--extra ru` (additional libraries will be downloaded).
 
+## Run using Docker
+
+```
+git clone https://github.com/mitrokun/wyoming_supertonic.git
+cd wyoming_supertonic
+sudo docker build . -t "wyoming-supertonic:latest" --build-arg WITH_RU=false # for auto-stress for the Russian language, set this to true
+mkdir data # models will be downloaded here
+sudo docker compose up
+```
+Edit [docker-compose-yml](docker-compose.yml) as needed.
+
 ---
 
 ### Tip: Multi-Language Setup
