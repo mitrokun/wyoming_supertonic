@@ -4,69 +4,90 @@ import logging
 import os
 import sys
 from functools import partial
+from typing import Optional
 from urllib.parse import urlparse
 
 from wyoming.info import Attribution, Info, TtsProgram, TtsVoice
 from wyoming.server import AsyncTcpServer
 
 from . import __version__
-from .supertonic_engine import SupertonicEngine
 from .handler import SupertonicEventHandler
+from .supertonic_engine import SupertonicEngine
 
 _LOGGER = logging.getLogger(__name__)
+
+
+def parse_target_db(val: str) -> Optional[float]:
+    """Parse --target-db command line argument."""
+    if val is None or val.lower() in ("none", "off", "false", "0", "disable"):
+        return None
+    try:
+        return float(val)
+    except ValueError:
+        raise argparse.ArgumentTypeError(
+            f"Invalid --target-db value: '{val}'. Expected float (e.g. -3.0) or 'off'."
+        )
+
 
 async def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--uri", default="tcp://0.0.0.0:10209", help="Server URI")
     parser.add_argument("--data-dir", default=None, help="Path to models (optional for V3)")
     parser.add_argument("--language", default="en", help="Default voice language")
-    parser.add_argument("--crop-silence", type=int, default=300, help="Crop silence from start and end")
+    parser.add_argument("--crop-silence", type=int, default=260, help="Crop silence from start and end")
     parser.add_argument("--steps", type=int, default=5, help="Denoising steps")
     parser.add_argument("--speed", type=float, default=1.0, help="Speech speed")
     parser.add_argument("--threads", type=int, default=4, help="CPU threads")
+    parser.add_argument(
+        "--target-db",
+        type=parse_target_db,
+        default=None,
+        help="Target volume normalization level in dBFS (e.g., -3.0). Disabled by default.",
+    )
     parser.add_argument("--no-streaming", action="store_true", help="Disable streaming")
     parser.add_argument("--debug", action="store_true", help="Debug logs")
     parser.add_argument("--log-format", default=logging.BASIC_FORMAT, help="Log format")
     parser.add_argument("--version", action="version", version=__version__)
-    
+
     args = parser.parse_args()
 
     logging.basicConfig(level=logging.DEBUG if args.debug else logging.INFO, format=args.log_format)
-    
+
     os.environ["SUPERTONIC_INTRA_OP_THREADS"] = str(args.threads)
     os.environ["SUPERTONIC_INTER_OP_THREADS"] = str(max(1, args.threads // 2))
 
     _LOGGER.info("Initializing Supertonic V3 engine...")
-    
+
     engine = SupertonicEngine(
-        steps=args.steps, 
-        speed=args.speed, 
+        steps=args.steps,
+        speed=args.speed,
         model_path=args.data_dir,
-        crop_silence_ms=args.crop_silence
+        crop_silence_ms=args.crop_silence,
+        target_db=args.target_db,
     )
-    
+
     try:
         await asyncio.to_thread(engine.load)
     except Exception as e:
         _LOGGER.fatal(f"Load error: {e}")
         return
 
-    wyoming_voices =[]
-    
-    supported_languages =[
-        "en", "ko", "ja", "ar", "bg", "cs", "da", "de", 
-        "el", "es", "et", "fi", "fr", "hi", "hr", "hu", 
-        "id", "it", "lt", "lv", "nl", "pl", "pt", "ro", 
+    wyoming_voices = []
+
+    supported_languages = [
+        "en", "ko", "ja", "ar", "bg", "cs", "da", "de",
+        "el", "es", "et", "fi", "fr", "hi", "hr", "hu",
+        "id", "it", "lt", "lv", "nl", "pl", "pt", "ro",
         "ru", "sk", "sl", "sv", "tr", "uk", "vi"
     ]
-    
+
     for voice_id in engine.available_voices:
         readable_name = voice_id
         if voice_id.startswith("M") and voice_id[1:].isdigit():
             readable_name = f"Male {voice_id[1:]}"
         elif voice_id.startswith("F") and voice_id[1:].isdigit():
             readable_name = f"Female {voice_id[1:]}"
-            
+
         wyoming_voices.append(
             TtsVoice(
                 name=voice_id,
@@ -91,7 +112,7 @@ async def main() -> None:
             )
         ],
     )
-    
+
     uri = urlparse(args.uri)
     if uri.scheme != "tcp" or not uri.hostname or not uri.port:
         _LOGGER.fatal("Only tcp://HOST:PORT URI is supported")
@@ -113,11 +134,13 @@ async def main() -> None:
     except KeyboardInterrupt:
         pass
 
+
 def run():
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
         pass
+
 
 if __name__ == "__main__":
     run()

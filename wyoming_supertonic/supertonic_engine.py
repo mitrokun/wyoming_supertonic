@@ -1,7 +1,7 @@
 import importlib
 import inspect
 import logging
-from typing import Tuple
+from typing import Optional, Tuple
 
 import numpy as np
 
@@ -26,20 +26,23 @@ class SupertonicEngine:
         speed: float = 1.0,
         model_path: str = None,
         crop_silence_ms: int = 300,
+        target_db: Optional[float] = None,
     ) -> None:
         """
         Initialize engine settings.
-        
+
         Args:
             steps: Denoising steps (3-5 for speed, 10-20 for quality).
             speed: Speech rate multiplier.
             model_path: Optional path for models.
             crop_silence_ms: Silence to remove from both ends.
+            target_db: Target peak audio volume normalization level in dBFS (e.g. -3.0).
         """
         self.steps = steps
         self.speed = speed
         self.model_path = model_path
         self.crop_silence_ms = crop_silence_ms
+        self.target_db = target_db
         self.tts = None
         self.sample_rate = 44100
 
@@ -77,18 +80,18 @@ class SupertonicEngine:
                 _LOGGER.debug("[%s] Text normalizer loaded successfully.", lang)
             except ImportError as exc:
                 _LOGGER.warning(
-                    "[%s] Text normalizer won't be available (missing dependency): %s", 
+                    "[%s] Text normalizer won't be available (missing dependency): %s",
                     lang, exc
                 )
             except Exception as exc:
                 _LOGGER.error(
-                    "[%s] Failed to initialize normalizer: %s", 
+                    "[%s] Failed to initialize normalizer: %s",
                     lang, exc
                 )
 
     def load(self) -> None:
         """
-        Initializes the TTS library. 
+        Initializes the TTS library.
         Models are auto-downloaded if missing.
         """
         _LOGGER.info("Loading engine (Supertonic V3)...")
@@ -114,15 +117,22 @@ class SupertonicEngine:
         bad_chars = ["\xad", "\u200b", "\ufeff", "\u200c", "\u200d"]
         for char in bad_chars:
             text = text.replace(char, "")
-        
+
         # Cleanup whitespace
         return " ".join(text.split())
 
     def synthesize(
-        self, text: str, voice_name: str, lang_code: str = "en"
-    ) -> Tuple[bytes, int]:
+        self,
+        text: str,
+        voice_name: str,
+        lang_code: str = "en",
+        session_scale: Optional[float] = None,
+    ) -> Tuple[bytes, int, Optional[float]]:
         """
         Synthesize text into PCM audio.
+
+        Returns:
+            Tuple of (pcm_bytes, sample_rate, updated_session_scale)
         """
         if self.tts is None:
             raise RuntimeError("Engine not loaded! Call load() first.")
@@ -141,11 +151,11 @@ class SupertonicEngine:
         if short_lang in self.normalizers:
             original_text = text
             text = self.normalizers[short_lang].normalize(text)
-            
+
             # Log the prepared text so we can see the result of the normalizer
             if original_text != text:
                 _LOGGER.debug(
-                    "[%s] Synth: %s", 
+                    "[%s] Synth: %s",
                     short_lang, text
                 )
 
@@ -202,6 +212,37 @@ class SupertonicEngine:
                         "Audio too short (%d samples) for cropping.", len(wav)
                     )
 
+            # 5.5 Peak Audio Normalization (Smart 99.95% percentile + session memory)
+            if self.target_db is not None and len(wav) > 0:
+                abs_wav = np.abs(wav)
+
+                # Filter out single-sample glitch spikes using 99.95th percentile
+                perc_peak = float(np.percentile(abs_wav, 99.95))
+                effective_peak = max(perc_peak, 1e-5)
+
+                target_linear = 10.0 ** (self.target_db / 20.0)
+                raw_target_scale = target_linear / effective_peak
+
+                # Cross-sentence gain smoothing across the session
+                if session_scale is None:
+                    final_scale = raw_target_scale
+                else:
+                    # Limit maximum deviation (+/- 3 dB) relative to session baseline
+                    max_deviation = 1.414
+                    clamped_target = np.clip(
+                        raw_target_scale,
+                        session_scale / max_deviation,
+                        session_scale * max_deviation,
+                    )
+                    # Exponential Moving Average (EMA)
+                    final_scale = 0.6 * session_scale + 0.4 * clamped_target
+
+                session_scale = final_scale
+
+                # Scale audio and apply hard limiting for outlier spikes
+                wav = wav * final_scale
+                wav = np.clip(wav, -1.0, 1.0)
+
         except Exception as exc:
             _LOGGER.error("In-library synthesis failure: %s", exc)
             raise
@@ -209,4 +250,4 @@ class SupertonicEngine:
         # 6. Convert to int16 PCM (Wyoming requirement)
         audio_int16 = (wav * 32767).clip(-32768, 32767).astype(np.int16)
 
-        return audio_int16.tobytes(), self.sample_rate
+        return audio_int16.tobytes(), self.sample_rate, session_scale
