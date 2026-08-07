@@ -31,10 +31,11 @@ python3 -m wyoming_supertonic --uri 'tcp://0.0.0.0:10209'
 *   `--speed`: Speech speed, 0.5 to 2.0 (default: `1.0`).
 *   `--steps`: Denoising steps. Higher is better quality but slower (default: `5`).
 *   `--threads`: Number of CPU threads to use (default: `4`).
+*   `--target-db`: Peak volume normalization target in dBFS, e.g. `-3.0` (disabled by default).
 *   `--no-streaming`: Disable sentence-by-sentence streaming.
 *   `--debug`: Enable debug logging.
 
-The initial synthesized audio for each sentence is framed by silence on both sides. I chose a default trim value of 300ms; if the pauses between sentences are unsatisfactory for you, try adjusting `--crop-silence` parameter.
+The initial synthesized audio for each sentence is framed by silence on both sides. I chose a default trim value of 260ms; if the pauses between sentences are unsatisfactory for you, try adjusting `--crop-silence` parameter.
 
 ### Supported Languages:
 | Code | Language | Code | Language | Code | Language |
