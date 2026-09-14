@@ -51,6 +51,16 @@ The initial synthesized audio for each sentence is framed by silence on both sid
 | `et` | Estonian | `lt` | Lithuanian | `vi` | Vietnamese |
 | `fi` | Finnish | `lv` | Latvian | `nl` | Dutch |
 
+### Text normalization
+
+For `ru` and `de` the text is passed through a language-specific normalizer before synthesis (see [ADD_NORM.md](ADD_NORM.md) to add your own language). The German normalizer converts numbers, clock times, percentages and temperatures into words and also reads IPv4/IPv6 addresses, CIDR prefixes (`10.85.0.0/23`, `2a01:41e0::/29`) and dotted version numbers (`1.3.1`) group by group, e.g. `10.85.0.65` is spoken as "zehn Punkt fünfundachtzig Punkt null Punkt fünfundsechzig".
+
+Its unit tests only need `num2words`:
+
+```bash
+python3 -m unittest discover -s tests
+```
+
 ## Quick start with uv
 
 ```

@@ -49,6 +49,8 @@ class GermanTextNormalizer:
             return text
 ```
 
+The `de_norm.py` shipped in this repository is a more complete example: besides plain numbers it handles clock times, percentages, degrees, IPv4/IPv6 addresses with CIDR prefixes and dotted version numbers, and it comes with unit tests in `tests/test_de_norm.py` (`python3 -m unittest discover -s tests`, only `num2words` needed).
+
 ---
 
 ### Step 2: Register the Normalizer in `supertonic_engine.py`
