@@ -1,7 +1,7 @@
 """German text normalizer for Wyoming-Supertonic.
 
-Converts digits, decimals, clock times, percentages, degrees, IPv4 addresses
-and dotted version numbers into spoken German words so a fast local TTS that
+Converts digits, decimals, clock times, percentages, degrees, IPv4/IPv6
+addresses and dotted version numbers into spoken German words so a fast local TTS that
 cannot handle "," "." ":" inside numbers produces correct speech.
 
 Design notes:
@@ -54,6 +54,13 @@ class GermanTextNormalizer:
     _DOTTED_PATTERN = re.compile(
         r"(?<![\w.,])(\d+(?:\.\d+){2,})(?![\w]|[.,]\d)(?:/(\d{1,3})(?!\w))?(?::(\d+))?"
     )
+    # IPv6 candidates: a run of hex digits and ":" containing at least two
+    # ":", optionally followed by a prefix length. Whether it really is an
+    # address is decided by ipaddress in _repl_ipv6, so "12:30:45" or a MAC
+    # address ("00:11:22:33:44:55") are left alone.
+    _IPV6_PATTERN = re.compile(
+        r"(?<![\w:.])(?=[0-9a-fA-F:]*:[0-9a-fA-F:]*:)([0-9a-fA-F:]+)(?![\w:]|\.\d)(?:/(\d{1,3})(?!\w))?"
+    )
 
     def __init__(self) -> None:
         self._del_table = str.maketrans("", "", self._chars_to_delete)
@@ -89,6 +96,7 @@ class GermanTextNormalizer:
         text = self._emoji_pattern.sub("", text)
         text = text.translate(self._del_table)
         text = text.replace("\n", " ").replace("\t", " ")
+        text = self._IPV6_PATTERN.sub(self._repl_ipv6, text)
         text = self._DOTTED_PATTERN.sub(self._repl_dotted, text)
         text = self._TIME_PATTERN.sub(self._repl_time, text)
         text = self._PERCENT_PATTERN.sub(self._repl_percent, text)
@@ -194,4 +202,28 @@ class GermanTextNormalizer:
                 words += " Doppelpunkt " + " ".join(self._say_int(d) for d in port)
             else:
                 words += f":{port}"
+        return words
+
+    def _spell_char(self, ch: str) -> str:
+        if ch.isdigit():
+            return self._say_int(ch)
+        if ch == ":":
+            return "Doppelpunkt"
+        return ch.lower()
+
+    def _repl_ipv6(self, m: "re.Match") -> str:
+        addr, prefix = m.group(1), m.group(2)
+        try:
+            ipaddress.IPv6Address(addr)
+        except ValueError:
+            return m.group(0)
+        # Every group character by character (digits as number words, hex
+        # letters as letters), "Doppelpunkt" for each ":" - so "::" becomes
+        # "Doppelpunkt Doppelpunkt".
+        words = " ".join(self._spell_char(ch) for ch in addr)
+        if prefix is not None:
+            if self._is_cidr(addr, prefix):
+                words += f" Schrägstrich {self._say_int(prefix)}"
+            else:
+                words += f"/{prefix}"
         return words
