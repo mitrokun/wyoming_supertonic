@@ -1,8 +1,8 @@
 """German text normalizer for Wyoming-Supertonic.
 
-Converts digits, decimals, clock times, percentages and degrees into spoken
-German words so a fast local TTS that cannot handle "," "." ":" inside
-numbers produces correct speech.
+Converts digits, decimals, clock times, percentages, degrees, IPv4 addresses
+and dotted version numbers into spoken German words so a fast local TTS that
+cannot handle "," "." ":" inside numbers produces correct speech.
 
 Design notes:
 - fail-open: any internal error returns the ORIGINAL text unmodified, so a
@@ -15,6 +15,7 @@ Design notes:
   disambiguated from HH:MM clock times - see _times().
 """
 
+import ipaddress
 import logging
 import re
 
@@ -45,6 +46,14 @@ class GermanTextNormalizer:
     _DEG_C_PATTERN = re.compile(r"(-?\d+(?:[.,]\d+)*)\s*°\s*C\b")
     _DEG_PATTERN = re.compile(r"(-?\d+(?:[.,]\d+)*)\s*°")
     _NUM_PATTERN = re.compile(r"(?:(?<=^)|(?<=\s))-\d+(?:[.,]\d+)*|\b\d+(?:[.,]\d+)*")
+    # Three or more dot-separated digit groups: IPv4 addresses ("10.85.0.65"),
+    # version numbers ("1.3.1"), optionally followed by a CIDR prefix ("/23")
+    # and - for IPv4 - by ":" plus digits ("10.85.0.15:13305").
+    # Two groups ("1.000", "10.5") are left to _NUM_PATTERN. A sentence period
+    # after the last group is not part of the match.
+    _DOTTED_PATTERN = re.compile(
+        r"(?<![\w.,])(\d+(?:\.\d+){2,})(?![\w]|[.,]\d)(?:/(\d{1,3})(?!\w))?(?::(\d+))?"
+    )
 
     def __init__(self) -> None:
         self._del_table = str.maketrans("", "", self._chars_to_delete)
@@ -80,6 +89,7 @@ class GermanTextNormalizer:
         text = self._emoji_pattern.sub("", text)
         text = text.translate(self._del_table)
         text = text.replace("\n", " ").replace("\t", " ")
+        text = self._DOTTED_PATTERN.sub(self._repl_dotted, text)
         text = self._TIME_PATTERN.sub(self._repl_time, text)
         text = self._PERCENT_PATTERN.sub(self._repl_percent, text)
         text = self._DEG_C_PATTERN.sub(self._repl_deg, text)
@@ -144,3 +154,44 @@ class GermanTextNormalizer:
 
     def _repl_num(self, m: "re.Match") -> str:
         return self._num_token(m.group(0))
+
+    @staticmethod
+    def _is_ipv4(addr: str) -> bool:
+        try:
+            ipaddress.IPv4Address(addr)
+        except ValueError:
+            return False
+        return True
+
+    @staticmethod
+    def _is_cidr(addr: str, prefix: str) -> bool:
+        try:
+            ipaddress.ip_network(f"{addr}/{prefix}", strict=False)
+        except ValueError:
+            return False
+        return True
+
+    def _repl_dotted(self, m: "re.Match") -> str:
+        addr, prefix, port = m.group(1), m.group(2), m.group(3)
+        groups = addr.split(".")
+        is_ipv4 = self._is_ipv4(addr)
+        # German thousands grouping (1-3 digits, then groups of exactly 3):
+        # "1.500.000" and "1.500.000.000" are still one number and left to
+        # _NUM_PATTERN - unless the sequence is a valid IPv4 address such as
+        # "192.168.178.100".
+        if not is_ipv4 and len(groups[0]) <= 3 and all(len(g) == 3 for g in groups[1:]):
+            return m.group(0)
+        words = " Punkt ".join(self._say_int(g) for g in groups)
+        if prefix is not None:
+            if is_ipv4 and self._is_cidr(addr, prefix):
+                words += f" Schrägstrich {self._say_int(prefix)}"
+            else:
+                words += f"/{prefix}"
+        if port is not None:
+            if is_ipv4:
+                # "10.85.0.15:13305" - no port semantics: the colon is read as
+                # "Doppelpunkt" and the digits after it are spelled one by one.
+                words += " Doppelpunkt " + " ".join(self._say_int(d) for d in port)
+            else:
+                words += f":{port}"
+        return words
