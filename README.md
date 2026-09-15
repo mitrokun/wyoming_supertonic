@@ -55,10 +55,6 @@ The initial synthesized audio for each sentence is framed by silence on both sid
 
 For `ru` and `de` the text is passed through a language-specific normalizer before synthesis (see [ADD_NORM.md](ADD_NORM.md) to add your own language).
 
-```bash
-python3 -m unittest discover -s tests
-```
-
 ## Quick start with uv
 
 ```
