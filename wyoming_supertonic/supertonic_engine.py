@@ -12,6 +12,7 @@ _LOGGER = logging.getLogger(__name__)
 NORMALIZERS_REGISTRY = {
     "ru": (".ru_norm", "RussianTextNormalizer"),
     "de": (".de_norm", "GermanTextNormalizer"),
+    "cs": (".cs_norm", "CzechTextNormalizer"),
 }
 
 

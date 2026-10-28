@@ -53,7 +53,7 @@ The initial synthesized audio for each sentence is framed by silence on both sid
 
 ### Text normalization
 
-For `ru` and `de` the text is passed through a language-specific normalizer before synthesis (see [ADD_NORM.md](ADD_NORM.md) to add your own language).
+For `ru`, `de` and `cs` the text is passed through a language-specific normalizer before synthesis (see [ADD_NORM.md](ADD_NORM.md) to add your own language).
 
 ## Quick start with uv
 
